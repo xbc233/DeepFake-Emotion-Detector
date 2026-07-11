@@ -18,19 +18,25 @@ env/
 .DS_Store
 Thumbs.db
 
-# Runtime data and generated artifacts
-data/videos/*
-data/audio/*
-data/frames/*
-data/results/*
-models/*
+# Runtime datasets and generated artifacts
+data/raw/**
+data/processed/**
+data/results/**
 
-# Keep empty directory placeholders
-!data/videos/.gitkeep
-!data/audio/.gitkeep
-!data/frames/.gitkeep
+# Keep the tracked directory placeholders
+!data/raw/.gitkeep
+!data/processed/.gitkeep
 !data/results/.gitkeep
-!models/.gitkeep
+
+# Model weights and caches (keep source code and documentation)
+models/**/*.bin
+models/**/*.ckpt
+models/**/*.h5
+models/**/*.onnx
+models/**/*.pt
+models/**/*.pth
+models/**/*.safetensors
+models/**/snapshots/
 
 # Logs and local configuration
 *.log
