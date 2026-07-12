@@ -5,3 +5,5 @@ hsemotion>=0.3.0,<1.0
 timm==0.9.16
 openai-whisper
 pytest>=7.4,<9.0
+sentencepiece>=0.2,<1.0
+transformers>=4.40,<5.0
