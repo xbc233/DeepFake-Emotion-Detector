@@ -8,7 +8,9 @@ import importlib
 import json
 import logging
 import math
+import os
 import sys
+import tempfile
 import time
 from collections import Counter
 from pathlib import Path
@@ -41,10 +43,12 @@ def read_csv(path: Path) -> list[dict[str, str]]:
 
 def dominant_emotion(path: Path) -> dict[str, Any]:
     """Return the most frequent known emotion and its share."""
+    from alignment import normalize_emotion
+
     emotions = [
-        row.get("emotion", "").strip().lower()
+        normalize_emotion(row.get("emotion", ""))
         for row in read_csv(path)
-        if row.get("emotion", "").strip().lower() not in {"", "unknown", "none"}
+        if normalize_emotion(row.get("emotion", "")) != "unknown"
     ]
     if not emotions:
         return {"emotion": "unknown", "proportion": 0.0, "samples": 0}
@@ -57,14 +61,15 @@ def dominant_emotion(path: Path) -> dict[str, Any]:
 
 
 def inconsistent_segments(
-    rows: list[dict[str, str]], interval: float, threshold: float
+    rows: list[dict[str, str]], interval: float, threshold: float,
+    duration: float | None = None,
 ) -> list[dict[str, Any]]:
     """Merge consecutive alignment points below the consistency threshold."""
     segments: list[dict[str, Any]] = []
     current: list[dict[str, str]] = []
     for row in rows + [{}]:
         score = float(row.get("consistency", "inf"))
-        if score < threshold:
+        if score < threshold and (duration is None or float(row["time"]) < duration):
             current.append(row)
             continue
         if current:
@@ -72,7 +77,8 @@ def inconsistent_segments(
             segments.append(
                 {
                     "start": round(float(current[0]["time"]), 3),
-                    "end": round(float(current[-1]["time"]) + interval, 3),
+                    "end": round(min(float(current[-1]["time"]) + interval,
+                                     duration if duration is not None else math.inf), 3),
                     "average_consistency": round(sum(scores) / len(scores), 6),
                     "samples": len(current),
                 }
@@ -114,7 +120,22 @@ def run_pipeline(args: argparse.Namespace) -> Path:
     if video.suffix.lower() != ".mp4":
         raise PipelineError("当前流水线仅支持 MP4 视频。")
 
-    work = args.work_dir.resolve() / video.stem
+    if args.offline:
+        # Set before importing transformers / huggingface_hub.
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        for checkpoint in (
+            args.whisper_model_dir / "tiny.pt",
+            Path.home() / ".hsemotion" / f"{args.face_model}.pt",
+        ):
+            if not checkpoint.is_file():
+                raise PipelineError(f"离线模式缺少模型: {checkpoint}；请先联网运行以下载模型。")
+
+    # Stage functions skip existing outputs. Give each run a fresh directory
+    # so changed inputs or parameters never silently reuse stale predictions.
+    work_parent = args.work_dir.resolve() / video.stem
+    work_parent.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix="run_", dir=work_parent))
     output = (args.output or (DEFAULT_RESULTS_DIR / f"{video.stem}_report.json")).resolve()
     audio_path = work / "audio" / f"{video.stem}.wav"
     frames_dir = work / "frames"
@@ -174,10 +195,17 @@ def run_pipeline(args: argparse.Namespace) -> Path:
 
     LOGGER.info("[6/7] 风险评分与结论")
     rows = read_csv(alignment_csv)
+    info = video_info(video)
     risk = round(1.0 - min(max(float(average), 0.0), 1.0), 6)
     report = {
         "schema_version": "1.0",
-        "video": video_info(video),
+        "run_settings": {
+            "offline": args.offline, "frame_fps": args.frame_fps,
+            "interval": args.interval, "speech_window": args.speech_window,
+            "language": args.language, "face_model": args.face_model,
+            "speech_model": args.speech_model, "text_model": args.text_model,
+        },
+        "video": info,
         "main_emotions": {
             "face": dominant_emotion(face_csv),
             "speech": dominant_emotion(speech_csv),
@@ -185,7 +213,8 @@ def run_pipeline(args: argparse.Namespace) -> Path:
         },
         "average_consistency": round(float(average), 6),
         "inconsistent_segments": inconsistent_segments(
-            rows, args.interval, args.inconsistency_threshold),
+            rows, args.interval, args.inconsistency_threshold,
+            info["duration_seconds"]),
         "deepfake_risk_score": risk,
         "prediction": "fake" if risk >= args.fake_threshold else "real",
         "thresholds": {
@@ -200,6 +229,8 @@ def run_pipeline(args: argparse.Namespace) -> Path:
             "alignment": str(alignment_csv),
         },
     }
+    from interval_consistency import from_report
+    report["interval_js_comparison"] = from_report(report)
     report["timings_seconds"]["total"] = round(time.perf_counter() - total_started, 3)
 
     LOGGER.info("[7/7] 写入 JSON 报告")
@@ -215,6 +246,8 @@ def run_pipeline(args: argparse.Namespace) -> Path:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True, help="待检测 MP4 视频")
+    parser.add_argument("--offline", action="store_true",
+                        help="使用已缓存模型，关闭 Hugging Face 联网检查；演示时推荐")
     parser.add_argument("--output", type=Path, help="JSON 报告路径")
     parser.add_argument("--work-dir", type=Path, default=DEFAULT_WORK_DIR)
     parser.add_argument("--frame-fps", type=float, default=2.0)

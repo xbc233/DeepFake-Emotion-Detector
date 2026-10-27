@@ -16,6 +16,8 @@ import wave
 from pathlib import Path
 from typing import Any
 
+from emotion_distribution import encode_distribution
+
 import numpy as np
 import torch
 from transformers import AutoFeatureExtractor
@@ -48,6 +50,15 @@ class SpeechEmotionError(RuntimeError):
     """Raised when speech emotion processing cannot be completed."""
 
 
+def validate_loading_info(info: dict) -> None:
+    """Refuse checkpoints with uninitialized or incompatible parameters."""
+    problems = {key: info.get(key) for key in
+                ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")
+                if info.get(key)}
+    if problems:
+        raise SpeechEmotionError(f"Checkpoint architecture mismatch: {problems}")
+
+
 def load_model(model_name: str = DEFAULT_MODEL_NAME) -> tuple[Any, Any]:
     """Load a Hugging Face audio classifier and feature extractor on CPU.
 
@@ -65,7 +76,10 @@ def load_model(model_name: str = DEFAULT_MODEL_NAME) -> tuple[Any, Any]:
     LOGGER.info("Loading speech emotion model '%s' on CPU", model_name)
     try:
         feature_extractor = AutoFeatureExtractor.from_pretrained(model_name)
-        model = AutoModelForAudioClassification.from_pretrained(model_name)
+        model, loading_info = AutoModelForAudioClassification.from_pretrained(
+            model_name, output_loading_info=True
+        )
+        validate_loading_info(loading_info)
         model.to(torch.device("cpu"))
         model.eval()
     except Exception as exc:
@@ -183,7 +197,8 @@ def predict_emotion(
     waveform: np.ndarray[Any, Any],
     feature_extractor: Any,
     model: Any,
-) -> tuple[str, float]:
+    include_distribution: bool = False,
+) -> tuple:
     """Predict an emotion and confidence for one 16 kHz audio window."""
     minimum_length = TARGET_SAMPLE_RATE // 10
     if waveform.size < minimum_length:
@@ -208,6 +223,9 @@ def predict_emotion(
 
     if not math.isfinite(confidence):
         raise SpeechEmotionError("Model returned a non-finite confidence score.")
+    if include_distribution:
+        distribution = encode_distribution([model.config.id2label[i] for i in range(len(probabilities))], probabilities.tolist())
+        return normalize_label(str(label)), confidence, distribution
     return normalize_label(str(label)), min(max(confidence, 0.0), 1.0)
 
 
@@ -236,10 +254,11 @@ def analyze_audio(
 
     for start_sample in range(0, len(waveform), window_size):
         window = waveform[start_sample : start_sample + window_size]
-        emotion, confidence = predict_emotion(
+        emotion, confidence, distribution = predict_emotion(
             window,
             feature_extractor,
             model,
+            include_distribution=True,
         )
         start_time = start_sample / TARGET_SAMPLE_RATE
         rows.append(
@@ -247,6 +266,10 @@ def analyze_audio(
                 "time": f"{start_time:.3f}",
                 "emotion": emotion,
                 "confidence": f"{confidence:.6f}",
+                "end": f"{(start_sample + len(window)) / TARGET_SAMPLE_RATE:.3f}",
+                "probabilities": distribution,
+                "rms": f"{float(np.sqrt(np.mean(window ** 2))):.8f}",
+                "quality_status": "observed_vad_not_checked",
             }
         )
     return rows
@@ -264,7 +287,7 @@ def write_csv(rows: list[dict[str, str]], output_path: Path) -> None:
         ) as csv_file:
             writer = csv.DictWriter(
                 csv_file,
-                fieldnames=("time", "emotion", "confidence"),
+                fieldnames=("time", "end", "emotion", "confidence", "probabilities", "rms", "quality_status"),
             )
             writer.writeheader()
             writer.writerows(rows)

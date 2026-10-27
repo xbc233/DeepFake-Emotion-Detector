@@ -41,6 +41,9 @@ Linux/macOS 激活虚拟环境时使用 `source .venv/bin/activate`。FFmpeg 请
 
 ## 一键运行
 
+导师演示的阶段划分和第一步实测记录见 [DEMO_PLAN.md](DEMO_PLAN.md)。
+本机模型已缓存时，可以用 `.\scripts\demo_step1.ps1` 运行已有样本。
+
 在项目根目录执行：
 
 ```powershell
@@ -57,7 +60,7 @@ python scripts/run_pipeline.py `
   --fake-threshold 0.5
 ```
 
-默认中间产物写入 `data/processed/pipeline/<视频名>/`，最终报告写入 `data/results/<视频名>_report.json`。完整参数可运行：
+默认中间产物写入 `data/processed/pipeline/<视频名>/run_<唯一标识>/`，每次独立生成，避免复用旧结果；最终报告写入 `data/results/<视频名>_report.json`。模型已缓存时加 `--offline` 可关闭 Hugging Face 联网检查，适合现场演示。完整参数可运行：
 
 ```powershell
 python scripts/run_pipeline.py --help
@@ -175,6 +178,31 @@ python scripts/alignment.py --interval 0.5 --face-fps 2
 
 ## 测试
 
+小批量情感实验使用官方 RAVDESS 的固定 24 段样本（两位演员、六类情感）。下载与推理分开执行：
+
+```powershell
+# 需要联网；按需下载所选视频，校验 ZIP 成员 CRC，并保存 SHA256 样本清单
+.\.venv\Scripts\python.exe scripts/prepare_ravdess.py --download
+
+# 已有模型缓存时离线运行；输出目录必须为尚不存在的新目录
+.\.venv\Scripts\python.exe scripts/run_batch.py --output data/results/ravdess_pilot24_run1
+```
+
+若已下载两个完整官方 ZIP，可放入 `data/raw/ravdess/archives/`，去掉 `--download` 进行完整包 MD5 校验并提取。
+样本选择记录在 `data/metadata/ravdess_pilot24.json`，每次实验保存自己的清单副本、模型版本、源代码哈希、逐视频日志、JSON 报告、指标与 `summary.md`。单个样本失败后继续处理其余样本，失败数量单独列出。
+
+该实验检查情感模块及原始录制样本的高风险判定比例，不包含伪造样本，不计算真假分类准确率或 AUC。语音模型支持的四类情感另报指标；文本情感不使用演员表演标签评分。
+
 ```powershell
 python -m pytest
 ```
+
+
+## 当前研究进展（2026-10-27）
+
+已完成480段LAV-DF基础实验及48段模拟视频的特征与语义基线分析。同步特征显示一定深伪区分能力，当前情感及语义基线尚未显示可靠效果，不能宣称已实现有效诈骗检测。
+
+- [研究进度与主要结果](docs/RESEARCH_STATUS.md)
+- [运行与复现范围](docs/REPRODUCIBILITY.md)
+
+仓库包含研究代码、测试和汇总报告。原始媒体、模拟视频、模型权重和人工标注原件不上传。

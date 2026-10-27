@@ -1,0 +1,32 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>情感一致性实验时间轴</title>
+<style>body{font:16px system-ui;background:#f3f5f9;color:#17243b;max-width:1150px;margin:35px auto;padding:20px}h1{font-size:28px}section{background:white;border-radius:12px;padding:22px;margin:18px 0}select,button{padding:10px;margin:5px;border:1px solid #c2cbd8;border-radius:6px}svg{width:100%;height:auto}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:10px;border-bottom:1px solid #dde3ed;text-align:left}.muted{color:#53637b;line-height:1.7}.cards{display:flex;gap:30px;flex-wrap:wrap}.cards strong{display:block;font-size:25px}.scroll{overflow:auto}button:focus,select:focus{outline:3px solid #5289e5}</style>
+<h1>情感一致性实验时间轴</h1><p class="muted">探索性实验 · JS 表示情感分布差异，不是诈骗概率。灰色表示证据不足；尚未设定真假检测阈值。</p>
+<section><label>视频 <select id="video"></select></label><button id="prev">上一段</button><button id="next">下一段</button><label>共同类别 <select id="space"><option value="seven">七类</option><option value="six">六类</option></select></label><label>质量控制 <select id="stage"><option value="after">过滤后</option><option value="before">过滤前</option></select></label><div class="cards" id="cards"></div></section>
+<section><h2>时间轴</h2><p class="muted">悬停查看区间。蓝色为 VAD 判定有声；红色深浅表示 JS 差异大小，不代表已确认异常。文字情感只展示，不参与此 JS 分数。</p><svg id="timeline" viewBox="0 0 1040 300" role="img" aria-label="语音活动与情感分布差异时间轴"></svg></section>
+<section><h2>逐窗口依据</h2><div class="scroll"><table><thead><tr><th>区间</th><th>语音情感</th><th>人脸条件主情感</th><th>JS</th><th>有声比例</th><th>人脸有效覆盖</th><th>状态与原因</th></tr></thead><tbody id="windows"></tbody></table></div></section>
+<section><h2>原始情感输出</h2><p class="muted" id="raw"></p><p class="muted">“目标标签”仅展示数据源提供的整段情感标注；未提供时显示“未标注”。它不是真假标签，也不是每帧或文本情感真值。VAD 未经人工标注核验；筛选通过的窗口仍可能含非语音区间。</p></section>
+<script type="application/json" id="data">__REPORT_DATA__</script><script>
+const D=JSON.parse(document.getElementById('data').textContent),$=id=>document.getElementById(id),ns='http://www.w3.org/2000/svg';
+const names={anger:'愤怒',angry:'愤怒',happy:'开心',happiness:'开心',sad:'悲伤',sadness:'悲伤',neutral:'中性',fear:'恐惧',surprise:'惊讶',disgust:'厌恶',contempt:'轻蔑',other:'其他',unknown:'未知'};
+const reasons={short_window:'窗口过短',insufficient_voiced_seconds:'有声时长不足',low_voiced_fraction:'有声比例不足',no_vad_observation:'无 VAD 观测',missing_probabilities:'无可用概率',dominant_label_unsupported:'主类别不受支持',insufficient_shared_mass:'共同类别概率不足',unsupported_label_space:'类别空间不兼容'};
+function label(x){return x==null?'未标注':(names[x]||x)}function pct(x){return (x*100).toFixed(1)+'%'}
+D.forEach((d,i)=>{let o=document.createElement('option');o.value=i;o.textContent=d.id+' · '+label(d.target);$('video').append(o)});
+function node(tag,attrs,text){let n=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));if(text!==undefined)n.textContent=text;return n}
+function draw(){if(!D.length)return;const d=D[+$('video').value],j=d.comparisons[$('space').value+'_'+$('stage').value],svg=$('timeline');svg.replaceChildren();$('cards').replaceChildren();
+[['目标标签',label(d.target)],['可比较时长',pct(j.comparable_duration_fraction)],['平均 JS',j.mean_js_distance===null?'证据不足':j.mean_js_distance.toFixed(3)],['原基线风险',d.legacyRisk.toFixed(3)]].forEach(([k,v])=>{let a=document.createElement('p'),b=document.createElement('strong');a.textContent=k;b.textContent=v;a.append(b);$('cards').append(a)});
+const x=t=>130+880*t/d.duration;
+function block(start,end,y,color,title){let r=node('rect',{x:x(start),y,width:Math.max(.4,x(end)-x(start)),height:24,fill:color});r.append(node('title',{},title));svg.append(r)}
+[['VAD',40],['语音情感',95],['文本情感',150],['JS 差异',205]].forEach(([t,y])=>svg.append(node('text',{x:8,y:y+17,fill:'#17243b'},t)));
+d.frames.forEach(f=>block(f.start,Math.min(f.end,d.duration),40,f.speech===true?'#397ac7':f.speech===null?'#adb5c1':'#e8edf4',`${f.start.toFixed(2)}–${f.end.toFixed(2)}s ${f.speech===true?'有声':f.speech===null?'未观测':'非语音预测'}`));
+d.speech.forEach(w=>block(+w.time,Math.min(+w.end,d.duration),95,'#b8d4ed',`${w.time}–${w.end}s ${label(w.emotion)}`));
+d.text.forEach(w=>block(Math.max(0,+w.start),Math.min(+w.end,d.duration),150,'#c6bde3',`${w.start}–${w.end}s ${label(w.emotion)}`));
+j.windows.forEach(w=>block(w.start,w.end,205,w.js_distance===null?'#bdc3cb':`hsl(5 68% ${92-45*w.js_distance}%)`,`${w.start}–${w.end}s JS ${w.js_distance===null?'证据不足':w.js_distance.toFixed(3)}`));
+for(let i=0;i<=5;i++){let t=d.duration*i/5;svg.append(node('text',{x:x(t),y:265,'text-anchor':'middle',fill:'#53637b'},t.toFixed(2)+'s'))}
+$('windows').replaceChildren();j.windows.forEach(w=>{let q=d.quality.find(r=>Math.abs(+r.start-w.start)<.001),a=d.speech.find(r=>Math.abs(+r.time-w.start)<.001),why=[];
+if($('stage').value==='after'&&q&&q.eligible==='False')why.push(...q.reasons.split(';').map(r=>reasons[r]||r));
+if(w.face_time_coverage<j.min_face_coverage)why.push('人脸有效覆盖不足');if(w.speech_status!=='comparable')why.push(reasons[w.speech_status]||w.speech_status);
+const p=w.face_conditional_distribution,face=p?label(j.shared_labels[p.indexOf(Math.max(...p))]):'不可用';
+let tr=document.createElement('tr');[`${w.start.toFixed(2)}–${w.end.toFixed(2)}s`,a?label(a.emotion):'缺失',face,w.js_distance===null?'—':w.js_distance.toFixed(3),q?pct(+q.voiced_fraction):'—',pct(w.face_time_coverage),w.js_distance===null?'证据不足：'+why.join('；'):'可比较'].forEach(v=>{let td=document.createElement('td');td.textContent=v;tr.append(td)});$('windows').append(tr)});
+$('raw').textContent='人脸逐帧：'+d.face.map(r=>label(r.emotion)).join(' → ')+'。文本：'+d.text.map(r=>`${r.start}–${r.end}s ${label(r.emotion)}`).join('；')+'。';}
+['video','space','stage'].forEach(id=>$(id).addEventListener('change',draw));$('prev').onclick=()=>{$('video').value=(+$('video').value+D.length-1)%D.length;draw()};$('next').onclick=()=>{$('video').value=(+$('video').value+1)%D.length;draw()};draw();
+</script></html>

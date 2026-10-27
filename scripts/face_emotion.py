@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from emotion_distribution import encode_distribution
+
 import cv2
 import numpy as np
 import torch
@@ -146,7 +148,8 @@ def recognize_frame(
     frame_path: Path,
     detector: cv2.CascadeClassifier,
     model: HSEmotionRecognizer,
-) -> tuple[str, float]:
+    include_distribution: bool = False,
+) -> tuple:
     """Recognize the primary face emotion in one frame.
 
     Args:
@@ -167,7 +170,7 @@ def recognize_frame(
 
     face = detect_primary_face(image, detector)
     if face is None:
-        return "unknown", 0.0
+        return ("unknown", 0.0, "") if include_distribution else ("unknown", 0.0)
 
     try:
         emotion, scores = model.predict_emotions(face, logits=False)
@@ -188,6 +191,9 @@ def recognize_frame(
         )
 
     confidence = min(max(confidence, 0.0), 1.0)
+    if include_distribution:
+        distribution = encode_distribution([model.idx_to_class[i] for i in range(len(probabilities))], probabilities)
+        return str(emotion).lower(), confidence, distribution
     return str(emotion).lower(), confidence
 
 
@@ -221,20 +227,21 @@ def process_video(
         ) as csv_file:
             writer = csv.DictWriter(
                 csv_file,
-                fieldnames=("frame", "emotion", "confidence"),
+                fieldnames=("frame", "emotion", "confidence", "probabilities", "quality_status"),
             )
             writer.writeheader()
 
             for frame_path in frame_files:
                 try:
-                    emotion, confidence = recognize_frame(
+                    emotion, confidence, distribution = recognize_frame(
                         frame_path,
                         detector,
                         model,
+                        include_distribution=True,
                     )
                 except FaceEmotionError as exc:
                     LOGGER.error("%s", exc)
-                    emotion, confidence = "unknown", 0.0
+                    emotion, confidence, distribution = "unknown", 0.0, ""
 
                 if emotion == "unknown":
                     unknown_count += 1
@@ -243,6 +250,8 @@ def process_video(
                         "frame": frame_path.name,
                         "emotion": emotion,
                         "confidence": f"{confidence:.6f}",
+                        "probabilities": distribution,
+                        "quality_status": "unavailable" if emotion == "unknown" else "observed",
                     }
                 )
 

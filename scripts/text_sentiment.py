@@ -7,6 +7,8 @@ One time-aligned CSV is written per transcript below
 
 from __future__ import annotations
 
+from emotion_distribution import encode_distribution
+
 import argparse
 import csv
 import json
@@ -141,7 +143,8 @@ def classify_texts(
     texts: list[str],
     classifier: Any,
     batch_size: int,
-) -> list[tuple[str, float]]:
+    include_distribution: bool = False,
+) -> list[tuple]:
     """Classify a batch of non-empty texts into the candidate emotions.
 
     Args:
@@ -197,7 +200,12 @@ def classify_texts(
         score = float(scores[0])
         if emotion not in CANDIDATE_LABELS or not math.isfinite(score):
             raise TextSentimentError("Classifier returned an invalid prediction.")
-        predictions.append((emotion, min(max(score, 0.0), 1.0)))
+        if include_distribution:
+            if set(labels) != set(CANDIDATE_LABELS) or len(labels) != len(CANDIDATE_LABELS):
+                raise TextSentimentError("Incomplete candidate distribution")
+            predictions.append((emotion, score, encode_distribution(labels, scores)))
+        else:
+            predictions.append((emotion, min(max(score, 0.0), 1.0)))
     return predictions
 
 
@@ -212,20 +220,22 @@ def analyze_segments(
     inference.
     """
     non_empty_texts = [segment["text"] for segment in segments if segment["text"]]
-    predictions = iter(classify_texts(non_empty_texts, classifier, batch_size))
+    predictions = iter(classify_texts(non_empty_texts, classifier, batch_size, include_distribution=True))
     rows: list[dict[str, str]] = []
 
     for segment in segments:
         if segment["text"]:
-            emotion, score = next(predictions)
+            emotion, score, distribution = next(predictions)
         else:
-            emotion, score = "neutral", 0.0
+            emotion, score, distribution = "unknown", 0.0, ""
         rows.append(
             {
                 "start": f"{segment['start']:.3f}",
                 "end": f"{segment['end']:.3f}",
                 "emotion": emotion,
                 "score": f"{score:.6f}",
+                "probabilities": distribution,
+                "quality_status": "observed" if segment["text"] else "empty_text",
             }
         )
     return rows
@@ -243,7 +253,7 @@ def write_csv(rows: list[dict[str, str]], output_path: Path) -> None:
         ) as csv_file:
             writer = csv.DictWriter(
                 csv_file,
-                fieldnames=("start", "end", "emotion", "score"),
+                fieldnames=("start", "end", "emotion", "score", "probabilities", "quality_status"),
             )
             writer.writeheader()
             writer.writerows(rows)

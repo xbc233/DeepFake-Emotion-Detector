@@ -1,0 +1,32 @@
+{
+  "syncnet_v2.model": {
+    "url": "https://www.robots.ox.ac.uk/~vgg/software/lipsync/data/syncnet_v2.model",
+    "bytes": 54573114,
+    "sha256": "961e8696f888fce4f3f3a6c3d5b3267cf5b343100b238e79b2659bff2c605442"
+  },
+  "example.avi": {
+    "url": "https://www.robots.ox.ac.uk/~vgg/software/lipsync/data/example.avi",
+    "bytes": 1111536,
+    "sha256": "1724121b3a50141cfc9e77c034f7de914024d015b92762ae12d3e1a7151b8621"
+  },
+  "SyncNetModel.py": {
+    "url": "https://raw.githubusercontent.com/joonson/syncnet_python/master/SyncNetModel.py",
+    "sha256": "12bf4eb233f9f91d591ff9f5c4d2ac04a978447f6f4600ccad0370c3bb55c3c1"
+  },
+  "SyncNetInstance.py": {
+    "url": "https://raw.githubusercontent.com/joonson/syncnet_python/master/SyncNetInstance.py",
+    "sha256": "ad3796fda12983eccdcffe9ca8e8692aa3fff17b865661502c47f41790e0bcfd"
+  },
+  "run_pipeline.py": {
+    "url": "https://raw.githubusercontent.com/joonson/syncnet_python/master/run_pipeline.py",
+    "sha256": "713ea8c5fda4d27838182af5a07573e7e23d46f2e7a4ac938a137ff9322dca18"
+  },
+  "download_model.sh": {
+    "url": "https://raw.githubusercontent.com/joonson/syncnet_python/master/download_model.sh",
+    "sha256": "f208e1dc79f8738dae2ad15599d460ba0abc071c69f643a03d05724efefe7bee"
+  },
+  "LICENSE.md": {
+    "url": "https://raw.githubusercontent.com/joonson/syncnet_python/master/LICENSE.md",
+    "sha256": "9b007a7a785e0e6c4ab10589044f332ef571a45588034163f4a05d13ffcb2a39"
+  }
+}

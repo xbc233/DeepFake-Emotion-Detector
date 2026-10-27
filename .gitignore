@@ -41,3 +41,31 @@ models/**/snapshots/
 # Logs and local configuration
 *.log
 .env
+
+# Isolated speech candidate environment
+.venv-emotion2vec/
+
+.edge-report-check/
+
+# Local research artifacts: publish only explicitly curated documentation
+.pytest_tmp*/
+data/simulated/
+experiments/
+outputs/
+presentation/
+proposal-slidev/
+models/emotion2vec_plus_base/
+models/configs/
+models/yunet/
+models/**/*.model
+*.mp4
+*.avi
+*.wav
+*.mp3
+*.tar
+*.zip
+node_modules/
+
+# Machine-specific browser smoke checks (require a local Slidev dependency)
+scripts/check*.cjs
+data/tools/
